@@ -1,6 +1,7 @@
 # ECCHO Social Follower Tracker
 
 Automated social media follower tracking with AI validation and reporting.
+(Last Updated: May 11, 2026)
 
 ## 🚀 Features
 - **AI-Powered Scraping**: Uses Gemini AI for high-accuracy numeric follower extraction.
