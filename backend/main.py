@@ -74,16 +74,29 @@ async def fetch_follower_count(url: str, platform: str) -> Optional[int]:
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
-            if resp.status_code != 200:
-                print(f"Failed to fetch {url}: {resp.status_code}")
-                return None
+            if resp.status_code != 200: return None
             
             text = resp.text
             
+            # 1. Try Meta Tags (Common for all)
+            meta_patterns = [
+                r'<meta name="description" content="([^"]+)"',
+                r'<meta property="og:description" content="([^"]+)"'
+            ]
+            for p in meta_patterns:
+                m = re.search(p, text, re.I)
+                if m:
+                    desc = m.group(1).lower()
+                    # Look for numbers near "followers" or "subscribers"
+                    num_match = re.search(r'([\d\.,]+[kmb]?)\s*(?:followers|subscribers|likes)', desc)
+                    if num_match:
+                        val = parse_number(num_match.group(1))
+                        if val: return val
+
+            # 2. Platform Specific Fallbacks
             if platform == "facebook":
                 m = re.search(r'"follower_count":(\d+)', text)
                 if m: return int(m.group(1))
-                # Look for "X followers" or "X likes"
                 patterns = [
                     r'([\d\.,]+[kmb]?)\s*(?:people\s*)?follow',
                     r'([\d\.,]+[kmb]?)\s*followers',
@@ -94,15 +107,23 @@ async def fetch_follower_count(url: str, platform: str) -> Optional[int]:
                     if m: return parse_number(m.group(1))
             
             elif platform == "instagram":
-                # Try to find in meta tags
-                m = re.search(r'([\d\.,]+[kmb]?)\s*Followers', text, re.I)
-                if m: return parse_number(m.group(1))
-                m = re.search(r'"edge_followed_by":\{"count":(\d+)\}', text)
-                if m: return int(m.group(1))
+                patterns = [
+                    r'([\d\.,]+[kmb]?)\s*Followers',
+                    r'"edge_followed_by":\{"count":(\d+)\}',
+                    r'content="([\d\.,]+[kmb]?)\s*Followers'
+                ]
+                for p in patterns:
+                    m = re.search(p, text, re.I)
+                    if m: return parse_number(m.group(1))
             
             elif platform == "youtube":
-                m = re.search(r'([\d\.,]+[kmb]?)\s*subscribers', text, re.I)
-                if m: return parse_number(m.group(1))
+                patterns = [
+                    r'([\d\.,]+[kmb]?)\s*subscribers',
+                    r'{"subscriberCountText":{"accessibility":{"accessibilityData":{"label":"([\d\.,]+[kmb]?)\ssubscribers"}'
+                ]
+                for p in patterns:
+                    m = re.search(p, text, re.I)
+                    if m: return parse_number(m.group(1))
 
             elif platform == "twitter":
                 m = re.search(r'([\d\.,]+[kmb]?)\s*Followers', text, re.I)
