@@ -15,3 +15,5 @@ export const downloadExcel = () =>
   })
 export const getAggregateReport = () => api.get('/reports/aggregate')
 export const getRecurringReport = () => api.get('/reports/recurring')
+export const deleteEntry = (id) => api.delete(`/entries/${id}`)
+export const deleteAllEntries = () => api.delete('/entries')

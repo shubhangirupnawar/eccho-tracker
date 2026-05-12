@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { scrapeFollowers } from '../lib/api'
 
 const PLATFORMS = [
-  { key: 'facebook_url', label: 'Facebook', color: '#1877F2', domains: ['facebook.com'] },
-  { key: 'instagram_url', label: 'Instagram', color: '#E1306C', domains: ['instagram.com'] },
+  { key: 'facebook_url', label: 'Facebook', color: '#1877F2', domains: ['facebook.com', 'fb.watch', 'fb.com'] },
+  { key: 'instagram_url', label: 'Instagram', color: '#E1306C', domains: ['instagram.com', 'instagr.am'] },
   { key: 'twitter_url', label: 'X / Twitter', color: '#1DA1F2', domains: ['twitter.com', 'x.com'] },
-  { key: 'linkedin_url', label: 'LinkedIn', color: '#0A66C2', domains: ['linkedin.com'] },
-  { key: 'youtube_url', label: 'YouTube', color: '#FF0000', domains: ['youtube.com', 'youtu.be'] },
+  { key: 'linkedin_url', label: 'LinkedIn', color: '#0A66C2', domains: ['linkedin.com', 'lnkd.in'] },
+  { key: 'youtube_url', label: 'YouTube', color: '#FF0000', domains: ['youtube.com', 'youtu.be', 'm.youtube.com'] },
 ]
 
 const icons = {
@@ -27,7 +27,7 @@ const icons = {
   ),
 }
 
-export default function ScrapeForm({ onSuccess }) {
+export default function ScrapeForm({ onSuccess, onUpdateCount }) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
@@ -51,6 +51,7 @@ export default function ScrapeForm({ onSuccess }) {
       const payload = { brand: 'Aditya Birla', [detected.key]: url }
       const res = await scrapeFollowers(payload)
       setResult(res.data)
+      onUpdateCount?.(prev => prev + 1)
       onSuccess?.()
     } catch (e) {
       setError(e.response?.data?.detail || 'Scrape failed. Check URL and try again.')

@@ -20,10 +20,11 @@ Automated social media follower tracking with AI validation and reporting.
    pip install -r requirements.txt
    ```
 2. Create a `.env` file in the `backend/` directory (see `.env.example`).
-3. Run the server:
+3. Run the server (from the root project directory):
    ```bash
-   uvicorn main:app --reload
+   uvicorn backend.main:app --reload
    ```
+   *(Note: If you are inside the `backend/` folder, run `uvicorn main:app --reload` instead)*
 
 ### Frontend (React/Vite)
 1. Install dependencies:

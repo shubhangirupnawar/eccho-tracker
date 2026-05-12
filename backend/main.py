@@ -250,6 +250,31 @@ async def get_dashboard():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/entries/{entry_id}")
+async def delete_entry(entry_id: str):
+    """Delete a specific record from Supabase."""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+    try:
+        supabase.table("social_followers").delete().eq("id", entry_id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/entries")
+async def delete_all_entries():
+    """Clear all records from the feed."""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+    try:
+        # Delete all records by filtering on brand (which is always Aditya Birla or others)
+        supabase.table("social_followers").delete().neq("brand", "___NONE___").execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/download-excel")
 async def download_excel():
     """Generate and download Excel report from Supabase data."""

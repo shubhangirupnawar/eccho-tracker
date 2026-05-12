@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ScrapeForm from './components/ScrapeForm'
 import Dashboard from './components/Dashboard'
 
 export default function App() {
   const [tab, setTab] = useState('scrape')
   const [refreshKey, setRefreshKey] = useState(0)
+
+  const [entries, setEntries] = useState(0)
+  const [lastScraped, setLastScraped] = useState(null)
+
+  useEffect(() => {
+    import('./lib/api').then(m => m.getDashboard()).then(res => {
+      const data = res.data?.data || []
+      setEntries(data.length)
+      if (data.length > 0) setLastScraped(data[0].scraped_at)
+    })
+  }, [])
 
   const handleSuccess = () => {
     setRefreshKey(k => k + 1)
@@ -60,15 +71,21 @@ export default function App() {
         <main style={{ paddingTop: '2rem' }}>
           {tab === 'scrape' ? (
             <div>
-              <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-                Paste brand social profile links below. We'll scrape the follower counts and save them to Supabase.
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
+                  Paste brand social profile links below.
+                </p>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase' }}>Total Scrapes</p>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>{entries}</p>
+                </div>
+              </div>
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '1.75rem' }}>
-                <ScrapeForm onSuccess={handleSuccess} />
+                <ScrapeForm onSuccess={handleSuccess} onUpdateCount={(c) => setEntries(c)} />
               </div>
             </div>
           ) : (
-            <Dashboard refreshKey={refreshKey} />
+            <Dashboard refreshKey={refreshKey} onUpdateStats={(e, d) => { setEntries(e); setLastScraped(d); }} />
           )}
         </main>
       </div>
