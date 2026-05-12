@@ -53,6 +53,24 @@ async def fetch_follower_count(url: str, platform: str) -> Optional[int]:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
 
+    def parse_number(text):
+        if not text: return None
+        text = text.lower().replace(",", "").strip()
+        multiplier = 1
+        if 'k' in text:
+            multiplier = 1000
+            text = text.replace('k', '')
+        elif 'm' in text:
+            multiplier = 1000000
+            text = text.replace('m', '')
+        elif 'b' in text:
+            multiplier = 1000000000
+            text = text.replace('b', '')
+        try:
+            return int(float(text) * multiplier)
+        except:
+            return None
+
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
@@ -62,22 +80,26 @@ async def fetch_follower_count(url: str, platform: str) -> Optional[int]:
             
             text = resp.text
             
-            # 1. Try Regex first (Fast & Free)
             if platform == "facebook":
                 m = re.search(r'"follower_count":(\d+)', text)
                 if m: return int(m.group(1))
-                m = re.search(r'([\d,]+)\s*(?:people\s*)?follow', text, re.I)
-                if m: return int(m.group(1).replace(",", ""))
+                m = re.search(r'([\d\.,]+[kmb]?)\s*(?:people\s*)?follow', text, re.I)
+                if m: return parse_number(m.group(1))
             
             elif platform == "instagram":
+                # Try to find in meta tags
+                m = re.search(r'([\d\.,]+[kmb]?)\s*Followers', text, re.I)
+                if m: return parse_number(m.group(1))
                 m = re.search(r'"edge_followed_by":\{"count":(\d+)\}', text)
                 if m: return int(m.group(1))
             
             elif platform == "youtube":
-                m = re.search(r'([\d,]+)\s*subscribers', text, re.I)
-                if m: return int(m.group(1).replace(",", ""))
+                m = re.search(r'([\d\.,]+[kmb]?)\s*subscribers', text, re.I)
+                if m: return parse_number(m.group(1))
 
-
+            elif platform == "twitter":
+                m = re.search(r'([\d\.,]+[kmb]?)\s*Followers', text, re.I)
+                if m: return parse_number(m.group(1))
 
     except Exception as e:
         print(f"Error fetching {platform}: {e}")
