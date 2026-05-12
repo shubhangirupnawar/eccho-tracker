@@ -51,83 +51,177 @@ async def fetch_follower_count(url: str, platform: str) -> Optional[int]:
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
     }
 
     def parse_number(text):
         if not text: return None
+        
+        # 0. Normalize Devanagari digits to standard digits
+        devanagari_map = str.maketrans('०१२३४५६७८९', '0123456789')
+        text = text.translate(devanagari_map)
+        
+        # Handle cases like "1.2K", "1,200", "1.2 Lakh", etc.
+        # Remove commas and normalize whitespace
         text = text.lower().replace(",", "").strip()
+        
+        # Remove any non-numeric/period/suffix characters at the end
+        # but keep common suffixes (including some Indian language ones)
+        # Regex: find a float/int followed by optional suffix
+        match = re.search(r'([\d\.]+)\s*([a-z\u0900-\u097F]*)', text)
+        if not match: return None
+        
+        num_str = match.group(1)
+        suffix = match.group(2)
+        
         multiplier = 1
-        if 'k' in text:
-            multiplier = 1000
-            text = text.replace('k', '')
-        elif 'm' in text:
+        # Priority order for suffixes
+        if any(x in suffix for x in ['crore', 'cr', 'कोटी', 'करोड']):
+            multiplier = 10000000
+        elif any(x in suffix for x in ['lakh', 'lac', 'लाख']):
+            multiplier = 100000
+        elif 'm' in suffix:
             multiplier = 1000000
-            text = text.replace('m', '')
-        elif 'b' in text:
+        elif 'k' in suffix:
+            multiplier = 1000
+        elif 'b' in suffix:
             multiplier = 1000000000
-            text = text.replace('b', '')
+        elif suffix == 'l': # Single 'l' usually means Lakh in India
+            multiplier = 100000
+            
         try:
-            return int(float(text) * multiplier)
+            return int(float(num_str) * multiplier)
         except:
             return None
 
+    # Locale Enforcement for Facebook/Instagram
+    if platform in ["facebook", "instagram"]:
+        if "?" in url:
+            url += "&locale=en_US"
+        else:
+            url += "?locale=en_US"
+
+    # Platform-specific headers (Bot Emulation)
+    if platform in ["facebook", "instagram"]:
+        # Use Facebook External Hit User-Agent to bypass login walls
+        headers["User-Agent"] = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+    elif platform == "youtube":
+        # Use Googlebot for YouTube
+        headers["User-Agent"] = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            print(f"DEBUG: Scrapping {platform} at {url}")
             resp = await client.get(url, headers=headers)
-            if resp.status_code != 200: return None
+            
+            if resp.status_code != 200: 
+                print(f"DEBUG: Scrape failed for {platform} at {url}: Status {resp.status_code}")
+                return None
             
             text = resp.text
+            print(f"DEBUG: Scraped {len(text)} characters")
             
-            # 1. Try Meta Tags (Common for all)
+            # 1. Try Meta Tags (Specifically og:description which is reliable for bots)
             meta_patterns = [
+                r'<meta property="og:description" content="([^"]+)"',
                 r'<meta name="description" content="([^"]+)"',
-                r'<meta property="og:description" content="([^"]+)"'
+                r'<meta name="twitter:description" content="([^"]+)"'
             ]
             for p in meta_patterns:
                 m = re.search(p, text, re.I)
                 if m:
-                    desc = m.group(1).lower()
-                    # Look for numbers near "followers" or "subscribers"
-                    num_match = re.search(r'([\d\.,]+[kmb]?)\s*(?:followers|subscribers|likes)', desc)
+                    raw_desc = m.group(1)
+                    from html import unescape
+                    desc = unescape(raw_desc).lower().replace('·', ' ').replace(',', '')
+                    print(f"DEBUG: Checking meta: {desc[:80]}...")
+                    
+                    # Pattern for followers/likes
+                    num_match = re.search(r'([\d\.,\u0966-\u096F]+(?:\s*(?:[kmbl]|lakh|crore|lac|लाख|सदस्य))?)\s*(?:followers|subscribers|likes|members|आवडी|फॉलोअर्स|सदस्य)', desc, re.I)
                     if num_match:
                         val = parse_number(num_match.group(1))
+                        print(f"DEBUG: Meta match found: {num_match.group(1)} -> {val}")
                         if val: return val
 
-            # 2. Platform Specific Fallbacks
+            # 2. Platform Specific JSON/HTML Fallbacks
             if platform == "facebook":
+                # Look for direct JSON data
                 m = re.search(r'"follower_count":(\d+)', text)
                 if m: return int(m.group(1))
+                
                 patterns = [
-                    r'([\d\.,]+[kmb]?)\s*(?:people\s*)?follow',
-                    r'([\d\.,]+[kmb]?)\s*followers',
-                    r'([\d\.,]+[kmb]?)\s*likes'
+                    r'([\d\.,\u0966-\u096F]+[kmb]?)\s*(?:people\s*)?(?:follow|followers|likes|आवडी|फॉलोअर्स|सदस्य)',
+                    r'\\"follower_count\\":(\d+)'
                 ]
                 for p in patterns:
                     m = re.search(p, text, re.I)
-                    if m: return parse_number(m.group(1))
+                    if m: 
+                        val = parse_number(m.group(1))
+                        if val: return val
             
             elif platform == "instagram":
                 patterns = [
-                    r'([\d\.,]+[kmb]?)\s*Followers',
-                    r'"edge_followed_by":\{"count":(\d+)\}',
-                    r'content="([\d\.,]+[kmb]?)\s*Followers'
+                    r'\\"edge_followed_by\\":\{\\"count\\":(\d+)\}',
+                    r'"edge_followed_by":{"count":(\d+)}',
+                    r'([\d\.,\u0966-\u096F]+[kmb]?)\s*Followers',
+                    r'followed_by\\":(\d+)'
                 ]
                 for p in patterns:
                     m = re.search(p, text, re.I)
-                    if m: return parse_number(m.group(1))
+                    if m: 
+                        if m.group(1).isdigit(): return int(m.group(1))
+                        val = parse_number(m.group(1))
+                        if val: return val
             
             elif platform == "youtube":
                 patterns = [
-                    r'([\d\.,]+[kmb]?)\s*subscribers',
-                    r'{"subscriberCountText":{"accessibility":{"accessibilityData":{"label":"([\d\.,]+[kmb]?)\ssubscribers"}'
+                    r'([\d\.,\u0966-\u096F]+[kmb]?)\s*subscribers',
+                    r'subscriberCountText.*?label":"([\d\.,\u0966-\u096F]+[kmb]?)\ssubscribers"'
                 ]
                 for p in patterns:
                     m = re.search(p, text, re.I)
-                    if m: return parse_number(m.group(1))
-
+                    if m: 
+                        val = parse_number(m.group(1))
+                        if val: return val
+            
             elif platform == "twitter":
-                m = re.search(r'([\d\.,]+[kmb]?)\s*Followers', text, re.I)
-                if m: return parse_number(m.group(1))
+                # Twitter/X is hard to scrape directly. Use syndication endpoint.
+                # Extract screen name: https://twitter.com/MDLZ -> MDLZ
+                screen_name = url.split('/')[-1].split('?')[0]
+                if screen_name:
+                    syndication_url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{screen_name}"
+                    try:
+                        s_resp = await client.get(syndication_url, headers=headers)
+                        if s_resp.status_code == 200:
+                            m = re.search(r'"followers_count":(\d+)', s_resp.text)
+                            if m: return int(m.group(1))
+                    except: pass
+                
+                # Fallback to meta tags and text
+                patterns = [
+                    r'([\d\.,]+[kmb]?)\s*Followers',
+                    r'"followers_count":(\d+)',
+                    r'<span>([\d\.,]+[kmb]?)\s*Followers</span>'
+                ]
+                for p in patterns:
+                    m = re.search(p, text, re.I)
+                    if m:
+                        if m.group(1).isdigit(): return int(m.group(1))
+                        val = parse_number(m.group(1))
+                        if val: return val
+
+            elif platform == "linkedin":
+                patterns = [
+                    r'([\d\.,\u0966-\u096F]+[kmb]?)\s*followers',
+                    r'followerCount":(\d+)',
+                    r'content="([\d\.,\u0966-\u096F]+[kmb]?)\s*followers on LinkedIn"'
+                ]
+                for p in patterns:
+                    m = re.search(p, text, re.I)
+                    if m:
+                        if m.group(1).isdigit(): return int(m.group(1))
+                        val = parse_number(m.group(1))
+                        if val: return val
 
     except Exception as e:
         print(f"Error fetching {platform}: {e}")
@@ -138,9 +232,15 @@ def is_last_day_of_month(date_obj):
     return date_obj.day == last_day
 
 
+@app.on_event("startup")
+async def startup_event():
+    print("\n" + "="*50)
+    print("ECCHO SOCIAL MINER API (v2.0 - NEW SCRAPER) IS RUNNING")
+    print("="*50 + "\n")
+
 @app.get("/")
 async def root():
-    return {"status": "ECCHO Tracker API running"}
+    return {"status": "ok", "version": "2.0-new-scraper", "message": "ECCHO Social Miner API"}
 
 
 @app.post("/api/scrape")
@@ -191,6 +291,13 @@ async def scrape_followers(links: SocialLinks):
     for platform, url in valid_tasks.items():
         count = await fetch_follower_count(url, platform)
         results[platform] = count
+
+    # 4. Validation: At least one count must be found
+    if not any(v is not None for v in results.values()):
+        raise HTTPException(
+            status_code=400, 
+            detail="Could not extract follower count. The page structure might have changed or the link is private."
+        )
 
     now = datetime.utcnow()
     record = {

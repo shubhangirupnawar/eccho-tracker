@@ -197,7 +197,6 @@ function RealtimeView({ data, stats, searchTerm, setSearchTerm, comparisonData, 
               <th style={{ padding: 12, textAlign: 'left' }}>SCRAPING DATE</th>
               <th style={{ padding: 12, textAlign: 'center' }}>PLATFORM / LINK</th>
               <th style={{ padding: 12, textAlign: 'right' }}>FOLLOWER COUNT</th>
-              <th style={{ padding: 12, textAlign: 'center' }}>ACTION</th>
             </tr>
           </thead>
           <tbody>
@@ -239,17 +238,6 @@ function RealtimeView({ data, stats, searchTerm, setSearchTerm, comparisonData, 
                   </td>
                   <td style={{ padding: 12, textAlign: 'right', fontWeight: 700, color: platform?.color || 'var(--text)' }}>
                     {fmtFull(countValue)}
-                  </td>
-                  <td style={{ padding: 12, textAlign: 'center' }}>
-                    <button 
-                      onClick={() => onDelete(r.id)}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4 }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--danger)'}
-                      onMouseOut={e => e.currentTarget.style.color = 'var(--muted)'}
-                      title="Delete Entry"
-                    >
-                      ✕
-                    </button>
                   </td>
                 </tr>
               )
