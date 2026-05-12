@@ -1,16 +1,12 @@
 import { useState } from 'react'
 import { scrapeFollowers } from '../lib/api'
 
-const BRANDS = [
-  'Aditya Birla'
-]
-
 const PLATFORMS = [
-  { key: 'facebook_url', label: 'Facebook', color: '#1877F2', placeholder: 'https://facebook.com/page' },
-  { key: 'instagram_url', label: 'Instagram', color: '#E1306C', placeholder: 'https://instagram.com/handle' },
-  { key: 'twitter_url', label: 'X / Twitter', color: '#1DA1F2', placeholder: 'https://x.com/handle' },
-  { key: 'linkedin_url', label: 'LinkedIn', color: '#0A66C2', placeholder: 'https://linkedin.com/company/name' },
-  { key: 'youtube_url', label: 'YouTube', color: '#FF0000', placeholder: 'https://youtube.com/@channel' },
+  { key: 'facebook_url', label: 'Facebook', color: '#1877F2', domains: ['facebook.com'] },
+  { key: 'instagram_url', label: 'Instagram', color: '#E1306C', domains: ['instagram.com'] },
+  { key: 'twitter_url', label: 'X / Twitter', color: '#1DA1F2', domains: ['twitter.com', 'x.com'] },
+  { key: 'linkedin_url', label: 'LinkedIn', color: '#0A66C2', domains: ['linkedin.com'] },
+  { key: 'youtube_url', label: 'YouTube', color: '#FF0000', domains: ['youtube.com', 'youtu.be'] },
 ]
 
 const icons = {
@@ -32,50 +28,32 @@ const icons = {
 }
 
 export default function ScrapeForm({ onSuccess }) {
-  const [brand, setBrand] = useState('Aditya Birla')
-  const [customBrand, setCustomBrand] = useState('')
-  const [links, setLinks] = useState({ facebook_url: '', instagram_url: '', twitter_url: '', linkedin_url: '', youtube_url: '' })
+  const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
 
-  const validateUrl = (platform, url) => {
-    if (!url || !url.trim()) return true
-    const domainMap = {
-      facebook_url: "facebook.com",
-      instagram_url: "instagram.com",
-      twitter_url: ["twitter.com", "x.com"],
-      linkedin_url: "linkedin.com",
-      youtube_url: ["youtube.com", "youtu.be"]
-    }
-    const allowed = domainMap[platform]
-    if (Array.isArray(allowed)) {
-      return allowed.some(d => url.toLowerCase().includes(d))
-    }
-    return url.toLowerCase().includes(allowed)
+  const detectPlatform = (val) => {
+    if (!val) return null
+    return PLATFORMS.find(p => p.domains.some(d => val.toLowerCase().includes(d)))
   }
 
+  const detected = detectPlatform(url)
+
   const handleSubmit = async () => {
-    const brandName = brand === 'Custom' ? customBrand.trim() : brand
-    if (!brandName) { setError('Please enter a brand name'); return }
-    
-    // Check if any URLs are provided
-    const providedLinks = Object.entries(links).filter(([_, v]) => v.trim())
-    if (providedLinks.length === 0) { setError('Enter at least one social media URL'); return }
-    
-    // Validate all provided URLs
-    const allValid = providedLinks.every(([platform, url]) => validateUrl(platform, url))
-    if (!allValid) { setError('One or more URLs are invalid. Please check the links.'); return }
+    if (!url.trim()) { setError('Please enter a URL'); return }
+    if (!detected) { setError('Unsupported platform. Please enter a valid social media URL.'); return }
 
     setError('')
     setLoading(true)
     setResult(null)
     try {
-      const res = await scrapeFollowers({ brand: brandName, ...links })
+      const payload = { brand: 'Aditya Birla', [detected.key]: url }
+      const res = await scrapeFollowers(payload)
       setResult(res.data)
       onSuccess?.()
     } catch (e) {
-      setError(e.response?.data?.detail || 'Scrape failed. Check URLs and try again.')
+      setError(e.response?.data?.detail || 'Scrape failed. Check URL and try again.')
     } finally {
       setLoading(false)
     }
@@ -86,77 +64,36 @@ export default function ScrapeForm({ onSuccess }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-      {/* Brand selector */}
-      <div>
-        <label style={{ display: 'block', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
-          Brand
-        </label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {BRANDS.map(b => (
-            <button key={b} onClick={() => setBrand(b)} style={{
-              padding: '7px 16px', borderRadius: 8, fontSize: 13,
-              border: brand === b ? '1.5px solid var(--accent)' : '1px solid var(--border2)',
-              background: brand === b ? 'rgba(200,255,0,0.08)' : 'transparent',
-              color: brand === b ? 'var(--accent)' : 'var(--muted)',
-              fontFamily: 'var(--font-body)', fontWeight: brand === b ? 500 : 400,
-              transition: 'all .15s',
-            }}>{b}</button>
-          ))}
-        </div>
-        {brand === 'Custom' && (
-          <input
-            value={customBrand}
-            onChange={e => setCustomBrand(e.target.value)}
-            placeholder="Enter brand name…"
-            style={{
-              marginTop: 10, width: '100%', padding: '10px 14px',
-              background: 'var(--bg3)', border: '1px solid var(--border2)',
-              borderRadius: 8, color: 'var(--text)', fontSize: 14,
-              fontFamily: 'var(--font-body)',
-            }}
-          />
-        )}
-      </div>
-
-      {/* URL inputs */}
+      {/* Single URL input */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <label style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-          Social media links
-        </label>
-        {PLATFORMS.map(p => {
-          const isValid = validateUrl(p.key, links[p.key])
-          return (
-            <div key={p.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: 6, flexShrink: 0,
-                      background: `${p.color}18`, border: `1px solid ${p.color}30`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: p.color,
-                    }}>
-                      {icons[p.key]}
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: p.color, opacity: 0.8 }}>{p.label}</span>
-                 </div>
-                 {!isValid && <span style={{ fontSize: 9, color: 'var(--danger)', fontWeight: 700, letterSpacing: '0.05em' }}>INVALID URL</span>}
-              </div>
-              <input
-                type="url"
-                value={links[p.key]}
-                onChange={e => setLinks(l => ({ ...l, [p.key]: e.target.value }))}
-                placeholder={p.placeholder}
-                style={{
-                  flex: 1, padding: '9px 14px',
-                  background: 'var(--bg3)', border: !isValid ? '1px solid var(--danger)' : '1px solid var(--border)',
-                  borderRadius: 8, color: 'var(--text)', fontSize: 13,
-                  fontFamily: 'var(--font-mono)',
-                  transition: 'all .15s',
-                }}
-              />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            Paste Social Media Link
+          </label>
+          {detected && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: detected.color }}>
+              {icons[detected.key]}
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em' }}>{detected.label.toUpperCase()} DETECTED</span>
             </div>
-          )
-        })}
+          )}
+        </div>
+        
+        <input
+          type="url"
+          value={url}
+          onChange={e => { setUrl(e.target.value); setError(''); setResult(null); }}
+          placeholder="https://facebook.com/page or https://instagram.com/handle..."
+          style={{
+            flex: 1, padding: '14px 18px',
+            background: 'var(--bg3)', 
+            border: detected ? `1.5px solid ${detected.color}50` : '1px solid var(--border)',
+            borderRadius: 12, color: 'var(--text)', fontSize: 14,
+            fontFamily: 'var(--font-mono)',
+            transition: 'all .2s ease',
+            outline: 'none',
+            boxShadow: detected ? `0 0 15px ${detected.color}15` : 'none',
+          }}
+        />
       </div>
 
       {error && (
@@ -167,49 +104,68 @@ export default function ScrapeForm({ onSuccess }) {
 
       <button
         onClick={handleSubmit}
-        disabled={loading}
+        disabled={loading || !url}
         style={{
-          padding: '13px 24px', borderRadius: 10, fontSize: 14, fontWeight: 600,
+          padding: '14px 24px', borderRadius: 10, fontSize: 14, fontWeight: 600,
           fontFamily: 'var(--font-display)',
           background: loading ? 'rgba(200,255,0,0.2)' : 'var(--accent)',
           color: loading ? 'var(--accent)' : '#000',
           border: loading ? '1px solid var(--accent)' : 'none',
           letterSpacing: '0.02em',
           transition: 'all .2s',
+          cursor: loading || !url ? 'not-allowed' : 'pointer',
+          opacity: !url ? 0.6 : 1,
         }}
       >
         {loading ? (
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
             <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block', width: 16, height: 16, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%' }} />
-            Scraping followers…
+            Detecting & Scraping…
           </span>
-        ) : '↗ Scrape Follower Counts'}
+        ) : '↗ Scrape Follower Count'}
       </button>
 
       {/* Results */}
-      {result && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid rgba(200,255,0,0.2)', borderRadius: 12, padding: '1.25rem' }}>
-          <p style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
-            ✓ Scraped & saved — {result.data?.brand}
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px,1fr))', gap: 8 }}>
-            {PLATFORMS.map(p => {
-              const fk = p.key.replace('_url', '').replace('twitter', 'twitter') + '_followers'
-              const altKey = p.key === 'youtube_url' ? 'youtube_subscribers' : fk
-              const val = result.data?.[altKey] ?? result.data?.[fk]
-              return (
-                <div key={p.key} style={{ textAlign: 'center', padding: '10px 8px', background: 'var(--bg2)', borderRadius: 8, border: `1px solid ${p.color}25` }}>
-                  <div style={{ color: p.color, marginBottom: 4 }}>{icons[p.key]}</div>
-                  <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 500 }}>{fmt(val)}</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{p.label}</div>
+      {result && detected && (
+        <div style={{ 
+          background: 'var(--bg3)', 
+          border: `1.2px solid ${detected.color}40`, 
+          borderRadius: 14, 
+          padding: '1.5rem',
+          animation: 'slideUp 0.3s ease-out'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+               <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: `${detected.color}18`, border: `1px solid ${detected.color}30`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: detected.color,
+                }}>
+                  {icons[detected.key]}
                 </div>
-              )
-            })}
+                <div>
+                  <p style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 2 }}>{detected.label}</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Success</p>
+                </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 2 }}>Count</p>
+              <p style={{ fontSize: 20, fontFamily: 'var(--font-mono)', fontWeight: 800, color: detected.color }}>
+                {fmt(result.data?.[detected.key === 'youtube_url' ? 'youtube_subscribers' : detected.key.replace('_url', '_followers')])}
+              </p>
+            </div>
           </div>
+          <p style={{ fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            Data saved to Supabase for <b>Aditya Birla</b>
+          </p>
         </div>
       )}
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
     </div>
   )
 }
