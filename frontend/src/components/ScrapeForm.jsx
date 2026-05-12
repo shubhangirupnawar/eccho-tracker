@@ -2,9 +2,7 @@ import { useState } from 'react'
 import { scrapeFollowers } from '../lib/api'
 
 const BRANDS = [
-  'Aditya Birla', 'HUL', 'ITC', 'Mahindra', 
-  'Marico', 'Mondelez', 'Nestle', 'Reliance', 
-  'Tata Group', 'Unilever', 'Custom'
+  'Aditya Birla'
 ]
 
 const PLATFORMS = [

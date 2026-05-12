@@ -13,18 +13,11 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
-import google.generativeai as genai
 import calendar
 
 load_dotenv()
 
-# Setup Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
-else:
-    model = None
+# API Setup
 
 app = FastAPI(title="ECCHO Social Tracker API")
 
@@ -84,21 +77,7 @@ async def fetch_follower_count(url: str, platform: str) -> Optional[int]:
                 m = re.search(r'([\d,]+)\s*subscribers', text, re.I)
                 if m: return int(m.group(1).replace(",", ""))
 
-            # 2. LLM Fallback for "correct count"
-            if model:
-                soup = BeautifulSoup(text, 'html.parser')
-                # Extract clean text to avoid token bloat
-                clean_text = ' '.join(soup.stripped_strings)[:4000] 
-                
-                prompt = f"Extract the exact number of followers/subscribers for this {platform} page from the text below. Return ONLY the number as an integer. If not found, return 0.\n\nText: {clean_text}"
-                
-                response = model.generate_content(prompt)
-                try:
-                    count_str = re.sub(r'[^\d]', '', response.text.strip())
-                    if count_str:
-                        return int(count_str)
-                except:
-                    pass
+
 
     except Exception as e:
         print(f"Error fetching {platform}: {e}")
@@ -156,36 +135,7 @@ async def scrape_followers(links: SocialLinks):
     if not valid_tasks:
         raise HTTPException(status_code=400, detail="Please provide at least one social media URL.")
 
-    # 2. AI Brand Validation: Verify if URLs belong to the selected brand
-    if model and valid_tasks:
-        urls_list = "\n".join(valid_tasks.values())
-        prompt = f"""
-        BRAND NAME TO CHECK: '{links.brand}'
-        PROVIDED URLs:
-        {urls_list}
-        
-        TASK:
-        Do these social media URLs belong to '{links.brand}'?
-        - If the URLs belong to a DIFFERENT brand (e.g., Mahindra URLs but brand is HUL), you MUST answer 'NO'.
-        - If the URLs match '{links.brand}' or are clearly for that brand, answer 'YES'.
-        - Answer ONLY 'YES' or 'NO'.
-        """
-        try:
-            brand_check = model.generate_content(prompt)
-            result_text = brand_check.text.strip().upper()
-            print(f"Brand Check for {links.brand}: {result_text}") # Debug log
-            
-            if "NO" in result_text:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Security Alert: These URLs do not belong to {links.brand}. Please check your links."
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"Brand validation error: {e}")
-    elif not model:
-        print("Warning: Gemini API Key missing. Skipping Brand Validation.")
+
 
     # 3. Run scraping for valid tasks
     for platform, url in valid_tasks.items():
@@ -213,8 +163,10 @@ async def scrape_followers(links: SocialLinks):
             # 1. Save to raw history
             supabase.table("social_followers").insert(record).execute()
             
-            # 2. Logic for reporting tables (FORCED for testing)
+            # 2. Logic for reporting tables
             month_name = now.strftime("%B")
+            is_last_day = is_last_day_of_month(now)
+            is_15th = now.day == 15
             
             report_data = {
                 "brand": links.brand,
@@ -225,20 +177,25 @@ async def scrape_followers(links: SocialLinks):
                 "youtube": results.get("youtube"),
             }
 
-            # Forcing updates regardless of date so user can see data
-            date_label = f"{now.day}th (Test)"
-            recurring_record = {
-                **report_data,
-                "month": month_name,
-                "date_label": date_label,
-                "scraped_at": now.isoformat()
-            }
-            supabase.table("recurring_followers").insert(recurring_record).execute()
+            # A. RECURRING TABLE (15th or Last Day)
+            # For testing, we allow all days. For production, uncomment the if condition.
+            if True: # is_15th or is_last_day: 
+                date_label = "15th" if is_15th else (f"{now.day}th" if not is_last_day else "Last Day")
+                recurring_record = {
+                    **report_data,
+                    "month": month_name,
+                    "date_label": date_label,
+                    "scraped_at": now.isoformat()
+                }
+                supabase.table("recurring_followers").insert(recurring_record).execute()
 
-            supabase.table("aggregate_followers").upsert({
-                **report_data,
-                "last_updated": now.date().isoformat()
-            }).execute()
+            # B. AGGREGATE TABLE (Last Day of Month)
+            # For testing, we allow all days. For production, uncomment the if condition.
+            if True: # is_last_day:
+                supabase.table("aggregate_followers").upsert({
+                    **report_data,
+                    "last_updated": now.date().isoformat()
+                }).execute()
 
         except Exception as e:
             print(f"Database error: {e}")
