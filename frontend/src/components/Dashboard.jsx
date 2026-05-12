@@ -11,13 +11,13 @@ const PLAT_CONFIG = [
 ]
 
 const fmt = (n) => {
-  if (n == null || n === 0) return '—'
+  if (n == null) return '—'
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
   return String(n)
 }
 
-const fmtFull = (n) => n != null && n !== 0 ? Number(n).toLocaleString('en-IN') : '—'
+const fmtFull = (n) => n != null ? Number(n).toLocaleString('en-IN') : '—'
 
 export default function Dashboard({ refreshKey, onUpdateStats }) {
   const [data, setData] = useState([])

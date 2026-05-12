@@ -83,8 +83,15 @@ async def fetch_follower_count(url: str, platform: str) -> Optional[int]:
             if platform == "facebook":
                 m = re.search(r'"follower_count":(\d+)', text)
                 if m: return int(m.group(1))
-                m = re.search(r'([\d\.,]+[kmb]?)\s*(?:people\s*)?follow', text, re.I)
-                if m: return parse_number(m.group(1))
+                # Look for "X followers" or "X likes"
+                patterns = [
+                    r'([\d\.,]+[kmb]?)\s*(?:people\s*)?follow',
+                    r'([\d\.,]+[kmb]?)\s*followers',
+                    r'([\d\.,]+[kmb]?)\s*likes'
+                ]
+                for p in patterns:
+                    m = re.search(p, text, re.I)
+                    if m: return parse_number(m.group(1))
             
             elif platform == "instagram":
                 # Try to find in meta tags
@@ -164,7 +171,7 @@ async def scrape_followers(links: SocialLinks):
         count = await fetch_follower_count(url, platform)
         results[platform] = count
 
-    now = datetime.now()
+    now = datetime.utcnow()
     record = {
         "brand": links.brand,
         "facebook_url": links.facebook_url,
@@ -177,7 +184,7 @@ async def scrape_followers(links: SocialLinks):
         "twitter_followers": results.get("twitter"),
         "linkedin_followers": results.get("linkedin"),
         "youtube_subscribers": results.get("youtube"),
-        "scraped_at": now.isoformat(),
+        "scraped_at": now.isoformat() + "Z",
     }
 
     if supabase:
@@ -207,7 +214,7 @@ async def scrape_followers(links: SocialLinks):
                     **report_data,
                     "month": month_name,
                     "date_label": date_label,
-                    "scraped_at": now.isoformat()
+                    "scraped_at": now.isoformat() + "Z"
                 }
                 supabase.table("recurring_followers").insert(recurring_record).execute()
 
