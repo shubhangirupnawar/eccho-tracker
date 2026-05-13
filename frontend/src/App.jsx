@@ -11,15 +11,17 @@ export default function App() {
 
   useEffect(() => {
     import('./lib/api').then(m => m.getDashboard()).then(res => {
-      const data = res.data?.data || []
+      const data = res.data || []
       setEntries(data.length)
       if (data.length > 0) setLastScraped(data[0].scraped_at)
     })
   }, [])
 
-  const handleSuccess = () => {
+  const handleSuccess = (record) => {
     setRefreshKey(k => k + 1)
-    setTimeout(() => setTab('dashboard'), 1200)
+    setEntries(prev => prev + 1)
+    setLastScraped(record?.scraped_at || new Date().toISOString())
+    setTab('dashboard')
   }
 
   return (
@@ -81,7 +83,7 @@ export default function App() {
                 </div>
               </div>
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '1.75rem' }}>
-                <ScrapeForm onSuccess={handleSuccess} onUpdateCount={(c) => setEntries(c)} />
+                <ScrapeForm onSuccess={handleSuccess} />
               </div>
             </div>
           ) : (

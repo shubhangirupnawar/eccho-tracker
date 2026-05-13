@@ -6,16 +6,28 @@ from typing import Optional
 import httpx
 import re
 import io
+import uuid
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from supabase import create_client, Client
 from datetime import datetime
 import os
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import calendar
 
-load_dotenv()
+# Load .env from the backend directory
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(env_path)
+
+# Try to import supabase, handle gracefully if missing
+try:
+    from supabase import create_client, Client
+    supabase_available = True
+except ImportError:
+    print("WARNING: supabase module not found. Install with: pip install supabase")
+    supabase_available = False
+    Client = type('Client', (), {})  # Dummy class
+    create_client = None
 
 # API Setup
 
@@ -32,7 +44,17 @@ app.add_middleware(
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+supabase: Client = None
+local_history = []
+if supabase_available and SUPABASE_URL and SUPABASE_KEY and create_client:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✓ Supabase client initialized successfully")
+    except Exception as e:
+        print(f"✗ Supabase initialization failed: {e}")
+        supabase = None
+else:
+    print("⚠ Supabase not configured (module missing or env vars not set)")
 
 
 class SocialLinks(BaseModel):
@@ -357,6 +379,10 @@ async def scrape_followers(links: SocialLinks):
         except Exception as e:
             print(f"Database error: {e}")
             raise HTTPException(status_code=500, detail=f"Database update failed: {str(e)}")
+    else:
+        # Local fallback storage when Supabase is not available
+        record["id"] = str(uuid.uuid4())
+        local_history.insert(0, record)
 
     return {"success": True, "brand": links.brand, "data": record}
 
@@ -375,44 +401,50 @@ async def get_recurring_report():
 
 @app.get("/api/dashboard")
 async def get_dashboard():
-    """Get all saved records from Supabase."""
-    if not supabase:
-        return {"data": [], "error": "Supabase not configured"}
-    try:
-        resp = supabase.table("social_followers").select("*").order("scraped_at", desc=True).execute()
-        return {"data": resp.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Get all saved records from Supabase or local fallback storage."""
+    if supabase:
+        try:
+            resp = supabase.table("social_followers").select("*").order("scraped_at", desc=True).execute()
+            return {"data": resp.data}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    return {"data": local_history}
 
 
 @app.delete("/api/entries/{entry_id}")
 async def delete_entry(entry_id: str):
-    """Delete a specific record from Supabase."""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
-    try:
-        supabase.table("social_followers").delete().eq("id", entry_id).execute()
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Delete a specific record from Supabase or local fallback."""
+    if supabase:
+        try:
+            supabase.table("social_followers").delete().eq("id", entry_id).execute()
+            return {"success": True}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    global local_history
+    local_history = [r for r in local_history if str(r.get("id")) != str(entry_id)]
+    return {"success": True}
 
 
 @app.delete("/api/entries")
 async def delete_all_entries():
     """Clear all records from the feed."""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
-    try:
-        # Delete all records by filtering on brand (which is always Aditya Birla or others)
-        supabase.table("social_followers").delete().neq("brand", "___NONE___").execute()
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if supabase:
+        try:
+            # Delete all records by filtering on brand (which is always Aditya Birla or others)
+            supabase.table("social_followers").delete().neq("brand", "___NONE___").execute()
+            return {"success": True}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    global local_history
+    local_history.clear()
+    return {"success": True}
 
 
 @app.get("/api/download-excel")
 async def download_excel():
-    """Generate and download Excel report from Supabase data."""
+    """Generate and download Excel report from Supabase or local data."""
     records = []
     if supabase:
         try:
@@ -420,6 +452,8 @@ async def download_excel():
             records = resp.data
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+    else:
+        records = local_history
 
     wb = openpyxl.Workbook()
 
